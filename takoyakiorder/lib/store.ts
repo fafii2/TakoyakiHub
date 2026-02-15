@@ -19,24 +19,41 @@ export interface OrderItem {
   quantity: number
 }
 
+// Order data stored locally for tracking
+export interface OrderData {
+  id: string
+  items: { name: string; qty: number; price: number }[]
+  totalPrice: number
+  status: OrderStatus
+  timestamp: string
+}
+
 export type OrderStatus = "idle" | "checkout" | "payment" | "pending" | "accepted" | "preparing" | "ready" | "completed" | "cancelled"
+export type UIState = "idle" | "checkout" | "payment" | "track-orders"
 
 interface Store {
+  // Shopping Cart & User
   items: Map<string, OrderItem>
-  status: OrderStatus
   customerName: string
   customerContact: string
+
+  // App State
+  uiState: UIState
   menuItems: MenuItem[]
-  currentOrderId: string | null
+
+  // Active Orders Tracking
+  activeOrderIds: string[]
+  orders: Record<string, OrderData>
 }
 
 let store: Store = {
   items: new Map(),
-  status: "idle",
+  uiState: "idle",
   customerName: "",
   customerContact: "",
   menuItems: [],
-  currentOrderId: null,
+  activeOrderIds: [],
+  orders: {}
 }
 
 const listeners = new Set<() => void>()
@@ -61,15 +78,21 @@ export function useStore() {
   // Restore session from localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const savedId = localStorage.getItem("takoyaki_order_id")
+      const savedIds = localStorage.getItem("takoyaki_order_ids")
       const savedName = localStorage.getItem("takoyaki_customer_name")
       const savedContact = localStorage.getItem("takoyaki_customer_contact")
 
-      if (savedId || savedName || savedContact) {
+      if (savedIds || savedName || savedContact) {
+        let parsedIds: string[] = []
+        try {
+          parsedIds = savedIds ? JSON.parse(savedIds) : []
+        } catch (e) {
+          console.error("Failed to parse saved order IDs", e)
+        }
+
         store = {
           ...store,
-          currentOrderId: savedId || null,
-          status: savedId ? "pending" : "idle",
+          activeOrderIds: parsedIds,
           customerName: savedName || "",
           customerContact: savedContact || ""
         }
@@ -78,10 +101,10 @@ export function useStore() {
     }
   }, [])
 
-  // Listen for order status updates from Firestore
+  // Listen for order updates
   useEffect(() => {
-    initOrderListener()
-  }, [state.currentOrderId])
+    initOrderListeners(state.activeOrderIds)
+  }, [JSON.stringify(state.activeOrderIds)])
 
   const addItem = useCallback((item: MenuItem) => {
     const existing = store.items.get(item.id)
@@ -105,16 +128,13 @@ export function useStore() {
 
   const clearItems = useCallback(() => {
     store.items.clear()
-    store.currentOrderId = null
-    store.status = "idle"
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("takoyaki_order_id")
-    }
+    store.uiState = "idle"
+    // Does NOT clear active orders
     emitChange()
   }, [])
 
-  const setStatus = useCallback((status: OrderStatus) => {
-    store = { ...store, status }
+  const setUIState = useCallback((state: UIState) => {
+    store = { ...store, uiState: state }
     emitChange()
   }, [])
 
@@ -128,45 +148,91 @@ export function useStore() {
   }, [])
 
   const submitOrder = useCallback(async () => {
+    const orderItems = Array.from(store.items.values()).map(i => ({
+      name: i.menuItem.name,
+      qty: i.quantity,
+      price: i.menuItem.price
+    }))
+
+    const totalPrice = Array.from(store.items.values()).reduce((sum, i) => sum + i.menuItem.price * i.quantity, 0)
+    const timestamp = new Date().toISOString()
+
     const orderData = {
       name: store.customerName,
       contactNumber: store.customerContact,
-      items: Array.from(store.items.values()).map(i => ({
-        name: i.menuItem.name,
-        qty: i.quantity,
-        price: i.menuItem.price
-      })),
-      totalPrice: Array.from(store.items.values()).reduce((sum, i) => sum + i.menuItem.price * i.quantity, 0),
+      items: orderItems,
+      totalPrice,
       status: "pending",
       pickupMethod: "pickup",
-      timestamp: new Date().toISOString()
+      timestamp
     }
 
     try {
       const colRef = collection(db, "orders")
       const docRef = await addDoc(colRef, orderData)
-      store = { ...store, currentOrderId: docRef.id }
+
+      const newId = docRef.id
+      const newActiveIds = [...store.activeOrderIds, newId]
+
+      // Update local state immediately for responsiveness
+      const newOrder: OrderData = {
+        id: newId,
+        items: orderItems,
+        totalPrice,
+        status: "pending",
+        timestamp
+      }
+
+      store = {
+        ...store,
+        activeOrderIds: newActiveIds,
+        orders: { ...store.orders, [newId]: newOrder }, // Optimistic update
+        uiState: "track-orders"
+      }
+
+      // Clear cart
+      store.items.clear()
+
       if (typeof window !== "undefined") {
-        localStorage.setItem("takoyaki_order_id", docRef.id)
+        localStorage.setItem("takoyaki_order_ids", JSON.stringify(newActiveIds))
       }
       emitChange()
-      return docRef.id
+      return newId
     } catch (e) {
       console.error("Error submitting order", e)
       throw e
     }
   }, [])
 
-  const cancelOrder = useCallback(async () => {
-    if (!store.currentOrderId) return
-
+  const cancelOrder = useCallback(async (orderId: string) => {
     try {
-      const docRef = doc(db, "orders", store.currentOrderId)
+      const docRef = doc(db, "orders", orderId)
       await updateDoc(docRef, { status: "cancelled" })
     } catch (e) {
       console.error("Error cancelling order", e)
       throw e
     }
+  }, [])
+
+  const dismissOrder = useCallback((orderId: string) => {
+    const newActiveIds = store.activeOrderIds.filter(id => id !== orderId)
+    const newOrders = { ...store.orders }
+    delete newOrders[orderId]
+
+    store = {
+      ...store,
+      activeOrderIds: newActiveIds,
+      orders: newOrders
+    }
+
+    if (newActiveIds.length === 0 && store.uiState === "track-orders") {
+      store.uiState = "idle"
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("takoyaki_order_ids", JSON.stringify(newActiveIds))
+    }
+    emitChange()
   }, [])
 
   const totalItems = Array.from(state.items.values()).reduce((sum, i) => sum + i.quantity, 0)
@@ -183,10 +249,11 @@ export function useStore() {
     addItem,
     removeItem,
     clearItems,
-    setStatus,
+    setUIState,
     setCustomerInfo,
     submitOrder,
-    cancelOrder
+    cancelOrder,
+    dismissOrder
   }
 }
 
@@ -219,52 +286,50 @@ export function initMenuListener() {
   })
 }
 
-let orderUnsub: (() => void) | null = null
-let lastOrderId: string | null = null
+// Map of orderId -> unsubscribe function
+const orderUnsubs = new Map<string, () => void>()
 
-export function initOrderListener() {
-  const currentId = store.currentOrderId
-
-  if (!currentId) {
-    if (orderUnsub) {
-      orderUnsub()
-      orderUnsub = null
-      lastOrderId = null
+export function initOrderListeners(orderIds: string[]) {
+  // Remove listeners for IDs that are no longer active
+  for (const [id, unsub] of orderUnsubs.entries()) {
+    if (!orderIds.includes(id)) {
+      unsub()
+      orderUnsubs.delete(id)
     }
-    return
   }
 
-  if (currentId !== lastOrderId) {
-    if (orderUnsub) {
-      orderUnsub()
-      orderUnsub = null
-    }
-    lastOrderId = currentId
+  // Add listeners for new IDs
+  orderIds.forEach(id => {
+    if (orderUnsubs.has(id)) return // Already listening
 
-    const docRef = doc(db, "orders", currentId)
-    orderUnsub = onSnapshot(docRef, (docSnap) => {
+    const docRef = doc(db, "orders", id)
+    const unsub = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data()
-        if (data.status && data.status !== store.status) {
-          const newStatus = data.status as OrderStatus
-          store = { ...store, status: newStatus }
 
-          if (newStatus === "cancelled" && typeof window !== "undefined") {
-            localStorage.removeItem("takoyaki_order_id")
-          }
-
-          emitChange()
+        // Update local order data
+        const updatedOrder: OrderData = {
+          id: docSnap.id,
+          items: data.items || [],
+          totalPrice: data.totalPrice || 0,
+          status: data.status as OrderStatus,
+          timestamp: data.timestamp || new Date().toISOString()
         }
+
+        store.orders = { ...store.orders, [id]: updatedOrder }
+        emitChange()
       } else {
-        // Order deleted by admin — treat as cancelled
-        store = { ...store, status: "cancelled" }
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("takoyaki_order_id")
+        // Order deleted remotely
+        store.orders = {
+          ...store.orders,
+          [id]: { ...store.orders[id], status: "cancelled" } as OrderData
         }
         emitChange()
       }
     }, (error) => {
-      console.error("Error listening to order:", error)
+      console.error(`Error listening to order ${id}:`, error)
     })
-  }
+
+    orderUnsubs.set(id, unsub)
+  })
 }

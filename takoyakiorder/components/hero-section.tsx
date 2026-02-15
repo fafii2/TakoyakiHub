@@ -12,7 +12,7 @@ export function HeroSection({ onOrderClick }: HeroSectionProps) {
       {/* Background image */}
       <div className="absolute inset-0 z-0">
         <Image
-          src="/images/hero-takoyaki.jpg"
+          src="/images/hero-bg.jpg"
           alt="Fresh takoyaki on a traditional serving tray"
           fill
           className="object-cover"
@@ -60,7 +60,7 @@ export function HeroSection({ onOrderClick }: HeroSectionProps) {
       <div className="absolute bottom-8 z-10 flex flex-col items-center gap-2 animate-pulse-soft">
         <span className="text-xs text-muted-foreground tracking-widest uppercase">{"Scroll"}</span>
         <svg width="16" height="24" viewBox="0 0 16 24" fill="none" className="text-muted-foreground">
-          <path d="M8 4L8 20M8 20L14 14M8 20L2 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M8 4L8 20M8 20L14 14M8 20L2 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
     </section>

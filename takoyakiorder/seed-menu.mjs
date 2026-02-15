@@ -22,7 +22,7 @@ const MENU_ITEMS = [
         nameJp: "たこ焼き",
         description: "Traditional octopus balls with takoyaki sauce, mayo, bonito flakes & green onion",
         price: 120,
-        image: "/images/classic-takoyaki.jpg",
+        image: "/images/classic.png",
         available: true
     },
     {
@@ -31,7 +31,7 @@ const MENU_ITEMS = [
         nameJp: "チーズたこ焼き",
         description: "Loaded with melted mozzarella cheese and our signature sauce blend",
         price: 140,
-        image: "/images/cheese-takoyaki.jpg",
+        image: "/images/cheese.png",
         available: true
     },
     {
@@ -40,7 +40,7 @@ const MENU_ITEMS = [
         nameJp: "辛口たこ焼き",
         description: "Fiery chili sauce with togarashi spice blend and sriracha mayo",
         price: 135,
-        image: "/images/spicy-takoyaki.jpg",
+        image: "/images/spicy.png",
         available: true
     },
     {
@@ -49,7 +49,7 @@ const MENU_ITEMS = [
         nameJp: "照り焼きたこ焼き",
         description: "Glazed with sweet teriyaki sauce, sesame seeds & pickled ginger",
         price: 135,
-        image: "/images/teriyaki-takoyaki.jpg",
+        image: "/images/teriyaki.png",
         available: true
     }
 ];

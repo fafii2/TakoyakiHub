@@ -6,14 +6,14 @@ import { MenuSection } from "@/components/menu-section"
 import { OrderSummary } from "@/components/order-summary"
 import { CheckoutSection } from "@/components/checkout-section"
 import { PaymentScreen } from "@/components/payment-screen"
-import { OrderStatusScreen } from "@/components/order-status"
+import { ActiveOrdersList } from "@/components/active-orders"
 import { useRef, useEffect, useState } from "react"
-
-const ACTIVE_STATUSES = ["pending", "accepted", "preparing", "ready", "cancelled"] as const
+import { Package } from "lucide-react"
 
 export default function Page() {
   const {
-    status,
+    uiState,
+    activeOrderIds,
     customerName,
     orderItems,
     menuItems,
@@ -22,7 +22,7 @@ export default function Page() {
     addItem,
     removeItem,
     clearItems,
-    setStatus,
+    setUIState,
     setCustomerInfo,
     submitOrder,
     cancelOrder,
@@ -39,50 +39,43 @@ export default function Page() {
   }
 
   function handleCheckout() {
-    setStatus("checkout")
+    setUIState("checkout")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   function handleConfirmOrder(name: string, contact: string) {
     setCustomerInfo(name, contact)
-    setStatus("payment")
+    setUIState("payment")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   async function handlePaymentComplete() {
     try {
       await submitOrder()
-      setStatus("pending")
+      // uiState is set to "track-orders" inside submitOrder
       window.scrollTo({ top: 0, behavior: "smooth" })
     } catch (e) {
       alert("Failed to submit order. Please try again.")
     }
   }
 
-  function handleNewOrder() {
-    clearItems()
-    setStatus("idle")
-    window.scrollTo({ top: 0, behavior: "smooth" })
+  // Active Orders List
+  if (uiState === "track-orders") {
+    return (
+      <main className="relative z-10">
+        <ActiveOrdersList />
+      </main>
+    )
   }
 
-  const [isStatusVisible, setIsStatusVisible] = useState(true)
-  const isActiveStatus = (ACTIVE_STATUSES as readonly string[]).includes(status)
-  const hasActiveOrder = ["pending", "accepted", "preparing", "ready"].includes(status)
-
-  useEffect(() => {
-    if (isActiveStatus) {
-      setIsStatusVisible(true)
-    }
-  }, [status, isActiveStatus])
-
   // Checkout flow
-  if (status === "checkout") {
+  if (uiState === "checkout") {
     return (
       <main className="relative z-10">
         <CheckoutSection
           orderItems={orderItems}
           totalPrice={totalPrice}
-          onBack={() => setStatus("idle")}
+          onBack={() => setUIState("idle")}
           onConfirm={handleConfirmOrder}
         />
       </main>
@@ -90,7 +83,7 @@ export default function Page() {
   }
 
   // Payment flow
-  if (status === "payment") {
+  if (uiState === "payment") {
     return (
       <main className="relative z-10">
         <PaymentScreen
@@ -102,22 +95,7 @@ export default function Page() {
     )
   }
 
-  // Order status flow
-  if (isActiveStatus && isStatusVisible) {
-    return (
-      <main className="relative z-10">
-        <OrderStatusScreen
-          status={status}
-          customerName={customerName}
-          onNewOrder={handleNewOrder}
-          onBackToMenu={() => setIsStatusVisible(false)}
-          onCancelOrder={cancelOrder}
-        />
-      </main>
-    )
-  }
-
-  // Main ordering flow
+  // Main ordering flow (Idle)
   return (
     <main className="relative z-10">
       <HeroSection onOrderClick={scrollToMenu} />
@@ -144,24 +122,28 @@ export default function Page() {
         </div>
       </footer>
 
-      {!hasActiveOrder && (
-        <OrderSummary
-          orderItems={orderItems}
-          totalItems={totalItems}
-          totalPrice={totalPrice}
-          onCheckout={handleCheckout}
-          onRemove={removeItem}
-        />
-      )}
+      <OrderSummary
+        orderItems={orderItems}
+        totalItems={totalItems}
+        totalPrice={totalPrice}
+        onCheckout={handleCheckout}
+        onRemove={removeItem}
+      />
 
-      {hasActiveOrder && (
-        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4">
+      {/* Floating 'View Orders' button if idle & has active orders */}
+      {activeOrderIds.length > 0 && uiState === "idle" && (
+        <div className="fixed bottom-24 right-6 z-40 animate-in fade-in slide-in-from-bottom-4">
           <button
-            onClick={() => setIsStatusVisible(true)}
-            className="bg-primary text-primary-foreground font-bold py-3 px-6 rounded-full shadow-lg hover:bg-primary/90 transition-all flex items-center gap-2"
+            onClick={() => setUIState("track-orders")}
+            className="bg-secondary text-secondary-foreground font-bold py-3 px-5 rounded-full shadow-lg hover:bg-secondary/90 transition-all flex items-center gap-2 border border-border"
           >
-            <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-            {"View Active Order"}
+            <Package className="w-5 h-5" />
+            <span>
+              {"View Orders"}
+              <span className="ml-1.5 bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-full">
+                {activeOrderIds.length}
+              </span>
+            </span>
           </button>
         </div>
       )}
