@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useOrders } from "@/hooks/use-store"
 import type { Order, OrderStatus } from "@/lib/types" // Updated type import
 import { OrderCard } from "./order-card"
@@ -16,7 +16,14 @@ const FILTER_OPTIONS: { label: string; value: OrderStatus | "all" }[] = [
 ]
 
 export function LiveQueue() {
-  const orders = useOrders()
+  const allOrders = useOrders()
+
+  // Only show orders from today
+  const orders = useMemo(() => {
+    const today = new Date().toLocaleDateString()
+    return allOrders.filter((o) => new Date(o.timestamp).toLocaleDateString() === today)
+  }, [allOrders])
+
   const [filter, setFilter] = useState<OrderStatus | "all">("all")
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
 

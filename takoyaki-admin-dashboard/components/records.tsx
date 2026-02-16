@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import {
   BarChart,
   Bar,
@@ -12,14 +12,25 @@ import {
   Cell,
 } from "recharts"
 import { useOrders } from "@/hooks/use-store"
-import { Check } from "lucide-react"
+import { Check, Calendar, ChevronDown, ArrowRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+
+type TimeRange = "today" | "yesterday" | "week" | "month" | "all"
 
 export function Records() {
   const orders = useOrders()
+  const [timeRange, setTimeRange] = useState<TimeRange>("today")
+  const [showFullHistory, setShowFullHistory] = useState(false)
 
-  const completedOrders = orders.filter((o) => o.status === "completed")
+  const completedOrders = useMemo(() => orders.filter((o) => o.status === "completed").sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()), [orders])
 
-  // Calculate sales history from actual orders
+  // Calculate sales history for chart (always last 7 days for now, or could match filter)
   const salesData = useMemo(() => {
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     const history = []
@@ -42,15 +53,118 @@ export function Records() {
     return history
   }, [completedOrders])
 
+  // Filtered orders for the list view
+  const filteredOrders = useMemo(() => {
+    const now = new Date()
+    const today = now.toLocaleDateString()
+    const yesterday = new Date(now.setDate(now.getDate() - 1)).toLocaleDateString()
+
+    // Reset date for calculations
+    const d = new Date()
+
+    return completedOrders.filter(o => {
+      const orderDate = new Date(o.timestamp)
+      const orderDateStr = orderDate.toLocaleDateString()
+
+      if (timeRange === "today") return orderDateStr === today
+      if (timeRange === "yesterday") return orderDateStr === yesterday
+      if (timeRange === "week") {
+        const weekAgo = new Date(d.setDate(d.getDate() - 7))
+        return orderDate >= weekAgo
+      }
+      if (timeRange === "month") {
+        const monthAgo = new Date(d.setMonth(d.getMonth() - 1))
+        return orderDate >= monthAgo
+      }
+      return true
+    })
+  }, [completedOrders, timeRange])
+
+  // Display limits
+  const displayOrders = showFullHistory ? filteredOrders : filteredOrders.slice(0, 15)
+
+  if (showFullHistory) {
+    return (
+      <div className="px-4 py-3 h-full flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowFullHistory(false)}>
+              ← Back
+            </Button>
+            <h2 className="text-xl font-bold">Full Sales History</h2>
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="ml-auto">
+                <Calendar className="mr-2 h-4 w-4" />
+                {timeRange === "today" && "Today"}
+                {timeRange === "yesterday" && "Yesterday"}
+                {timeRange === "week" && "Last 7 Days"}
+                {timeRange === "month" && "Last 30 Days"}
+                {timeRange === "all" && "All Time"}
+                <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setTimeRange("today")}>Today</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTimeRange("yesterday")}>Yesterday</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTimeRange("week")}>Last 7 Days</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTimeRange("month")}>Last 30 Days</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTimeRange("all")}>All Time</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <div className="flex-1 overflow-auto border rounded-md">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-muted-foreground uppercase bg-muted/50 sticky top-0">
+              <tr>
+                <th className="px-4 py-3">Order ID</th>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Customer</th>
+                <th className="px-4 py-3">Items</th>
+                <th className="px-4 py-3 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayOrders.map(order => (
+                <tr key={order.id} className="border-b border-border/50 hover:bg-muted/50">
+                  <td className="px-4 py-3 font-medium">#{order.id.slice(0, 8)}</td>
+                  <td className="px-4 py-3">{new Date(order.timestamp).toLocaleString()}</td>
+                  <td className="px-4 py-3">{order.name}</td>
+                  <td className="px-4 py-3">
+                    {order.items.map(i => `${i.qty}x ${i.name}`).join(", ")}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    ₱{order.items.reduce((s, i) => s + (i.price * i.qty), 0)}
+                  </td>
+                </tr>
+              ))}
+              {displayOrders.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No orders found for this period</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="px-4 py-3 space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Sales Chart Section */}
         <section className="bg-card border border-border rounded-xl p-4">
-          <h2 className="text-sm font-semibold text-foreground mb-1">
-            Sales History
-          </h2>
-          <p className="text-xs text-muted-foreground mb-4">Last 7 days</p>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground mb-1">
+                Sales History
+              </h2>
+              <p className="text-xs text-muted-foreground">Last 7 days</p>
+            </div>
+          </div>
           <div className="h-[250px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
@@ -121,64 +235,94 @@ export function Records() {
           </div>
         </section>
 
-        {/* Today's Completed Orders */}
+        {/* Filtered Orders List */}
         <section className="bg-card border border-border rounded-xl p-4 flex flex-col h-full max-h-[400px] lg:max-h-none">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-foreground">
-              {"Today's Completed"}
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              {completedOrders.length} orders
-            </span>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-foreground">
+                {timeRange === "today" && "Today's"}
+                {timeRange === "yesterday" && "Yesterday's"}
+                {timeRange === "week" && "This Week's"}
+                {timeRange === "month" && "This Month's"}
+                {timeRange === "all" && "All"} Completed
+              </h2>
+              <span className="text-xs text-muted-foreground">
+                {filteredOrders.length} orders
+              </span>
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Calendar className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setTimeRange("today")}>Today</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTimeRange("yesterday")}>Yesterday</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTimeRange("week")}>Last 7 Days</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTimeRange("month")}>Last 30 Days</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTimeRange("all")}>All Time</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          <div className="flex-1 overflow-y-auto pr-1">
-            {completedOrders.length === 0 ? (
+          <div className="flex-1 overflow-y-auto pr-1 space-y-2">
+            {displayOrders.length === 0 ? (
               <div className="flex items-center justify-center h-full min-h-[100px]">
                 <p className="text-sm text-muted-foreground">
-                  No completed orders yet
+                  No completed orders for this period
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {completedOrders.map((order) => {
-                  const total = order.items.reduce(
-                    (s, i) => s + i.price * i.qty,
-                    0
-                  )
-                  const time = new Date(order.timestamp).toLocaleTimeString(
-                    "en-US",
-                    { hour: "numeric", minute: "2-digit" }
-                  )
-                  return (
-                    <div
-                      key={order.id}
-                      className="flex items-center justify-between rounded-lg bg-background border border-border p-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-400/10">
-                          <Check className="h-4 w-4 text-green-400" />
-                        </div>
-                        <div>
-                          <span className="text-sm font-medium text-foreground">
-                            #{order.id.slice(0, 5)}
-                          </span>
-                          <p className="text-xs text-muted-foreground">
-                            {order.name}
-                          </p>
-                        </div>
+              displayOrders.map((order) => {
+                const total = order.items.reduce(
+                  (s, i) => s + i.price * i.qty,
+                  0
+                )
+                const time = new Date(order.timestamp).toLocaleTimeString(
+                  "en-US",
+                  { hour: "numeric", minute: "2-digit" }
+                )
+                return (
+                  <div
+                    key={order.id}
+                    className="flex items-center justify-between rounded-lg bg-background border border-border p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-400/10">
+                        <Check className="h-4 w-4 text-green-400" />
                       </div>
-                      <div className="text-right">
-                        <span className="text-sm font-semibold text-primary">
-                          {"₱"}{total}
+                      <div>
+                        <span className="text-sm font-medium text-foreground">
+                          #{order.id.slice(0, 5)}
                         </span>
-                        <p className="text-xs text-muted-foreground">{time}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {order.name}
+                        </p>
                       </div>
                     </div>
-                  )
-                })}
-              </div>
+                    <div className="text-right">
+                      <span className="text-sm font-semibold text-primary">
+                        {"₱"}{total}
+                      </span>
+                      <p className="text-xs text-muted-foreground">{time}</p>
+                    </div>
+                  </div>
+                )
+              })
             )}
+          </div>
+
+          <div className="pt-3 mt-auto border-t border-border">
+            <Button
+              variant="ghost"
+              className="w-full text-xs text-muted-foreground hover:text-foreground justify-between"
+              onClick={() => setShowFullHistory(true)}
+            >
+              View Full History
+              <ArrowRight className="h-3 w-3" />
+            </Button>
           </div>
         </section>
       </div>
